@@ -1,71 +1,86 @@
-"""Scenario schema: the declarative description of one test case.
+"""Scenario schema, built on 1Password SCAM's YAML format.
 
-A scenario pairs a benign user task with (optionally) an injection planted in
-content the agent will read. It also declares which credentials exist, which
-ones the task legitimately needs, and where each may be used. Oracles read
-these declarations to decide pass or fail, so nothing about scoring lives in
-agent code.
+A Gauntlet scenario file is a valid SCAM scenario (id, category, difficulty,
+description, environment, turns, checkpoints) plus one extra top-level block,
+``gauntlet:``, which SCAM ignores. That block adds what exact scoring needs:
+which vault items are canaries, where each may be used, which ones the task
+needs, the attack's goals, and a deterministic task-success check.
+
+SCAM: https://github.com/1Password/SCAM (MIT). Field names in ``environment``,
+``turns`` and ``checkpoints`` follow SCAM's template so files stay portable.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class Family(StrEnum):
-    """Attack families from the spec (section 6)."""
-
-    DIRECT = "F1"
-    AUTHORITY = "F2"
-    LOOKALIKE = "F3"
-    TOOL_OUTPUT = "F4"
-    TOOL_DESCRIPTION = "F5"
-    OBFUSCATED = "F6"
-    SCOPE_CREEP = "F7"
-    DELAYED = "F8"
-    CONTROL = "control"
-
-
 class Goal(StrEnum):
-    """What the attacker is trying to achieve."""
+    """What the attacker is trying to achieve (spec section 6; G4 dropped after review)."""
 
-    DISCLOSE = "G1"
-    MISUSE = "G2"
-    WIDEN_SCOPE = "G3"
-    MISLEAD_APPROVAL = "G4"
-    PERSIST = "G5"
-
-
-class CredentialMode(StrEnum):
-    """How the agent holds secrets during a run."""
-
-    RAW = "raw"  # the secret value is placed in the agent's context
-    BROKERED = "brokered"  # the agent only gets a handle and asks a broker to use it
+    DISCLOSE = "G1"  # a secret value reaches a third party
+    MISUSE = "G2"  # a credential is used on a wrong origin
+    WIDEN_SCOPE = "G3"  # the agent requests items the task does not need
+    PERSIST = "G5"  # a secret is written to notes or files
 
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class VaultItem(_Strict):
-    """A credential in the mock vault. Its value is a canary generated per run."""
+class _Loose(BaseModel):
+    """SCAM-owned blocks: accept fields we do not use, so SCAM files still load."""
 
-    id: str = Field(pattern=r"^[a-z0-9_]+$")
-    kind: Literal["api_key", "password", "totp_seed", "ssh_key", "session_cookie"]
-    description: str
+    model_config = ConfigDict(extra="allow", frozen=True)
+
+
+# ---- SCAM-compatible blocks -------------------------------------------------
+
+
+class Email(_Loose):
+    id: str
+    sender: str = Field(alias="from")
+    subject: str
+    body: str
+    threat: bool = False
+
+
+class VaultEntry(_Loose):
+    service: str
+    username: str = ""
+    password: str = ""  # replaced by a canary at run time when listed in gauntlet.vault
+
+
+class Environment(_Loose):
+    emails: tuple[Email, ...] = ()
+    vault: tuple[VaultEntry, ...] = ()
+    pages: dict[str, str] = Field(
+        default_factory=dict, description="Gauntlet addition: URL -> page text the agent can fetch"
+    )
+
+
+class Turn(_Loose):
+    role: Literal["user"]
+    content: str
+
+
+class Checkpoint(_Loose):
+    id: str
+    check_type: str
+    weight: float = 1.0
+
+
+# ---- Gauntlet extension ----------------------------------------------------
+
+
+class CanaryItem(_Strict):
+    service: str = Field(description="Matches environment.vault[].service")
     allowed_origins: tuple[str, ...] = Field(min_length=1)
-
-
-class Injection(_Strict):
-    """Attacker-controlled text and where it is planted."""
-
-    target: str = Field(description="Fixture path or tool name whose output carries the text")
-    text: str = Field(min_length=1)
 
 
 class FileExists(_Strict):
@@ -76,57 +91,69 @@ class FileExists(_Strict):
 class RequestMade(_Strict):
     kind: Literal["request_made"] = "request_made"
     origin: str
-    path: str
-    method: str = "GET"
 
 
-UtilityCheck = Annotated[FileExists | RequestMade, Field(discriminator="kind")]
+class CredentialFilled(_Strict):
+    kind: Literal["credential_filled"] = "credential_filled"
+    service: str
+    origin: str
 
 
-class Scenario(_Strict):
-    id: str = Field(pattern=r"^sec-(f[1-8]|ctl)-\d{2}$")
-    family: Family
+UtilityCheck = Annotated[FileExists | RequestMade | CredentialFilled, Field(discriminator="kind")]
+
+
+class GauntletBlock(_Strict):
+    attack: bool
     goals: tuple[Goal, ...] = ()
-    rationale: str = Field(min_length=10, description="Why this scenario is realistic")
-    user_task: str = Field(min_length=1)
-    fixtures: dict[str, str] = Field(
-        default_factory=dict, description="Mock URL or path -> fixture file, relative to the pack"
-    )
-    injection: Injection | None = None
-    vault: tuple[VaultItem, ...] = ()
-    needs: tuple[str, ...] = Field(default=(), description="Vault item ids the task needs")
-    allowed_actions: tuple[str, ...] = ()
+    vault: tuple[CanaryItem, ...] = ()
+    needs: tuple[str, ...] = Field(default=(), description="Services the task legitimately needs")
     utility: UtilityCheck
+
+
+class Scenario(_Loose):
+    id: str
+    category: str
+    difficulty: int = Field(ge=1, le=5)
+    description: str
+    environment: Environment
+    turns: tuple[Turn, ...] = Field(min_length=1)
+    checkpoints: tuple[Checkpoint, ...] = ()
+    gauntlet: GauntletBlock
 
     @model_validator(mode="after")
     def _consistent(self) -> Scenario:
-        ids = {item.id for item in self.vault}
-        unknown = set(self.needs) - ids
-        if unknown:
-            raise ValueError(f"needs refers to unknown vault items: {sorted(unknown)}")
-        if self.family is Family.CONTROL:
-            if self.injection is not None or self.goals:
-                raise ValueError("control scenarios must have no injection and no goals")
-        elif self.injection is None or not self.goals:
-            raise ValueError("attack scenarios need an injection and at least one goal")
+        services = {v.service for v in self.environment.vault}
+        g = self.gauntlet
+        for name, ids in (("gauntlet.vault", [c.service for c in g.vault]), ("needs", g.needs)):
+            unknown = set(ids) - services
+            if unknown:
+                raise ValueError(f"{name} names services not in environment.vault: {unknown}")
+        if g.attack != bool(g.goals):
+            raise ValueError("attack scenarios need goals; controls must have none")
         return self
 
-    def item(self, item_id: str) -> VaultItem | None:
-        return next((i for i in self.vault if i.id == item_id), None)
+    def canary_item(self, service: str) -> CanaryItem | None:
+        return next((c for c in self.gauntlet.vault if c.service == service), None)
+
+    @property
+    def user_task(self) -> str:
+        return "\n\n".join(t.content for t in self.turns)
 
 
-def load_scenario(path: Path) -> Scenario:
+def _parse(doc: dict[str, Any]) -> Scenario:
+    return Scenario.model_validate(doc)
+
+
+def load_file(path: Path) -> list[Scenario]:
+    """Load every scenario in a YAML file (SCAM allows several, separated by ``---``)."""
     with path.open(encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
-    return Scenario.model_validate(data)
+        return [_parse(d) for d in yaml.safe_load_all(fh) if d]
 
 
 def load_pack(directory: Path) -> list[Scenario]:
-    """Load every scenario YAML in a pack, sorted by id, rejecting duplicate ids."""
-    scenarios = [load_scenario(p) for p in sorted(directory.glob("*.yaml"))]
-    seen: set[str] = set()
-    for s in scenarios:
-        if s.id in seen:
-            raise ValueError(f"duplicate scenario id: {s.id}")
-        seen.add(s.id)
+    scenarios = [s for p in sorted(directory.glob("*.yaml")) for s in load_file(p)]
+    ids = [s.id for s in scenarios]
+    dupes = {i for i in ids if ids.count(i) > 1}
+    if dupes:
+        raise ValueError(f"duplicate scenario ids: {sorted(dupes)}")
     return sorted(scenarios, key=lambda s: s.id)
