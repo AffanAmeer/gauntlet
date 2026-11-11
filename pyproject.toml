@@ -1,0 +1,45 @@
+[project]
+name = "gauntlet"
+version = "0.1.0"
+description = "A test harness for tool-using AI agents: does an agent leak or misuse credentials under prompt injection?"
+readme = "README.md"
+authors = [{ name = "Affan Ameer" }]
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.15",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+    "types-pyyaml>=6.0.12.20261111",
+]
+
+[project.scripts]
+gauntlet = "gauntlet.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+packages = ["gauntlet"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
