@@ -22,16 +22,16 @@ with honest intervals, v1 cut by about a third.
 - Access oracle (misuse attempts vs completed, out-of-scope requests) and
   utility oracle.
 - Scripted agent and runner; 3 pilot scenarios with golden tests.
-  23 tests pass; ruff and mypy clean.
+- LLM tool-use loop for any OpenAI-compatible API (Ollama works, $0), tested
+  with a fake model. 26 tests pass; ruff and mypy clean.
 
 ## Next (in order, each a small commit)
 
-1. LLM agent adapter for one OpenAI-compatible API (works with Ollama locally, $0).
-2. `gauntlet run` CLI writing results.csv.
-3. $0 dry run: scripted agent, then a local model via Ollama, on the 3 pilots.
-4. Paid pilot only after telling Affan the cost (cap $10 total).
-5. Check SCAM's own validator accepts our files; one small PR to SCAM.
-6. Grow the pack (task x attack combinations) once the pilot shows the scenarios work.
+1. `gauntlet run` CLI writing results.csv.
+2. $0 dry run: scripted agent, then a local model via Ollama, on the 3 pilots.
+3. Paid pilot only after telling Affan the cost (cap $10 total).
+4. Check SCAM's own validator accepts our files; one small PR to SCAM.
+5. Grow the pack (task x attack combinations) once the pilot shows the scenarios work.
 
 ## Blocked
 
