@@ -23,6 +23,8 @@ with honest intervals, v1 cut by about a third.
   utility oracle.
 - Scripted agent and runner; 3 pilot scenarios with golden tests.
 - `gauntlet run` CLI (llm agent, modes, policies, repeats) writing results.csv.
+- Anthropic SDK agent (`--agent claude`, optional extra `uv sync --extra claude`) with token
+  accounting and a hard `--budget-usd` guard (default $1). Tested with a fake client.
 - LLM tool-use loop for any OpenAI-compatible API (Ollama works, $0), tested
   with a fake model. 27 tests pass; ruff and mypy clean.
 
@@ -30,7 +32,9 @@ with honest intervals, v1 cut by about a third.
 
 1. $0 dry run with a local model: Ollama is NOT installed in the cloud sandbox, so this
    needs Affan's laptop (`ollama pull llama3.1`, then `uv run gauntlet run`) or a free API tier.
-3. Paid pilot only after telling Affan the cost (cap $10 total).
+3. Paid pilot (Affan approved "if under a dollar"): `ANTHROPIC_API_KEY` set by Affan, spend limit $5 on the key,
+   `uv run gauntlet run --agent claude --model claude-haiku-5-5 --repeats 3`; est. ~$0.05. Then
+   claude-sonnet-5-5 (est. ~$0.8 at 3 repeats) only if Affan agrees.
 4. Check SCAM's own validator accepts our files; one small PR to SCAM.
 5. Grow the pack (task x attack combinations) once the pilot shows the scenarios work.
 

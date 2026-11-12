@@ -8,6 +8,7 @@ import dataclasses
 import json
 from pathlib import Path
 
+from gauntlet.agents.claude_loop import ClaudeAgent
 from gauntlet.agents.llm_loop import LLMAgent, http_completion
 from gauntlet.core.events import EventKind
 from gauntlet.core.runner import Agent, RunResult, run_one
@@ -18,6 +19,12 @@ DEFAULT_PACK = Path("packs/secrets/scenarios")
 
 
 def build_agent(args: argparse.Namespace) -> Agent:
+    if args.agent == "claude":
+        import anthropic  # optional dependency: uv sync --extra claude
+
+        return ClaudeAgent(
+            name=args.model, client=anthropic.Anthropic(), budget_usd=args.budget_usd
+        )
     if args.agent == "llm":
         complete = http_completion(args.base_url, args.model, args.api_key_env)
         return LLMAgent(name=args.model, complete=complete)
@@ -51,12 +58,15 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     run = sub.add_parser("run", help="run a scenario pack against an agent")
     run.add_argument("--pack", type=Path, default=DEFAULT_PACK)
-    run.add_argument("--agent", choices=["llm"], default="llm")
+    run.add_argument("--agent", choices=["llm", "claude"], default="llm")
     run.add_argument("--base-url", default="http://localhost:11434/v1")
     run.add_argument("--model", default="llama3.1")
     run.add_argument("--api-key-env", default=None, help="env var holding the API key")
     run.add_argument("--modes", nargs="+", type=Mode, default=list(Mode))
     run.add_argument("--policies", nargs="+", type=Policy, default=[Policy.ORIGIN])
+    run.add_argument(
+        "--budget-usd", type=float, default=1.0, help="stop if estimated spend exceeds this"
+    )
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--out", type=Path, default=Path("runs/results.csv"))
     run.add_argument("--traces", type=Path, default=Path("runs/traces"))
@@ -80,5 +90,10 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     save_trace(args.traces, r, world, agent)
     write_csv(results, args.out)
+    if isinstance(agent, ClaudeAgent):
+        print(
+            f"tokens in={agent.input_tokens} out={agent.output_tokens} "
+            f"estimated cost=${agent.cost_usd:.3f}"
+        )
     print(f"wrote {len(results)} rows to {args.out}")
     return 0
