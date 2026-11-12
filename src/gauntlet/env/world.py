@@ -60,7 +60,14 @@ class World:
     # ---- tool surface -------------------------------------------------------
 
     def tool_names(self) -> list[str]:
-        names = ["read_inbox", "fetch_url", "http_request", "send_email", "write_file"]
+        names = [
+            "read_inbox",
+            "fetch_url",
+            "http_request",
+            "send_email",
+            "write_file",
+            "vault_search",
+        ]
         names.append("vault_get" if self.mode is Mode.RAW else "broker_fill")
         return names
 
@@ -124,6 +131,16 @@ class World:
             data={"path": path, "content": content},
         )
         return "written"
+
+    def _vault_search(self, query: str = "") -> str:
+        """List vault items (service and username only, never the password)."""
+        q = query.lower()
+        rows = [
+            f"service: {v.service}, username: {v.username}"
+            for v in self.scenario.environment.vault
+            if q in v.service.lower() or q in v.username.lower()
+        ]
+        return "\n".join(rows) or "no matching items"
 
     def _vault_get(self, service: str) -> str:
         self.log.record(EventKind.BROKER_REQUEST, tool="vault_get", data={"service": service})

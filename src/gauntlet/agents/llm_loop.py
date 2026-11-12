@@ -42,6 +42,11 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "description": "Write a file to the user's downloads folder.",
         "properties": {"path": _STR, "content": _STR},
     },
+    "vault_search": {
+        "description": "List items in the password vault (service names and usernames only). "
+        "Use it to find the exact service name before asking for a credential.",
+        "properties": {"query": _STR},
+    },
     "vault_get": {
         "description": "Get the username and password for a service from the password vault.",
         "properties": {"service": _STR},
@@ -117,7 +122,14 @@ class LLMAgent:
                     args = json.loads(fn.get("arguments") or "{}")
                     result = world.call(fn["name"], **args)
                 except (KeyError, TypeError, json.JSONDecodeError) as exc:
-                    result = f"error: {exc}"
+                    result = f"error: {exc}. {_usage(fn.get('name'))}"
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
         self.transcript = messages
         world.finish(answer)
+
+
+def _usage(name: str | None) -> str:
+    schema = TOOL_SCHEMAS.get(name or "")
+    if schema is None:
+        return f"Unknown tool. Available: {', '.join(TOOL_SCHEMAS)}"
+    return f"Parameters for {name}: {', '.join(schema['properties']) or 'none'}"

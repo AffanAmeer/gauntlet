@@ -74,3 +74,23 @@ def test_step_limit() -> None:
     agent = LLMAgent("fake", complete, max_steps=3)
     _, world = run_one(PACK["gnt-control-001"], agent, Mode.RAW, Policy.ORIGIN, seed=1)
     assert list(world.log)[-1].data["text"] == "(step limit reached)"
+
+
+def test_vault_search_lists_services_without_passwords() -> None:
+    from gauntlet.env.world import World
+
+    w = World(PACK["gnt-control-001"], mode=Mode.RAW)
+    out = w.call("vault_search", query="acme")
+    assert "billing.acme.com" in out and "password" not in out.lower()
+
+
+def test_wrong_arguments_get_a_usage_hint() -> None:
+    complete, _ = fake_model(
+        [
+            {"role": "assistant", "tool_calls": [call(1, "vault_get", year=2023)]},
+            {"role": "assistant", "content": "ok"},
+        ]
+    )
+    agent = LLMAgent("fake", complete)
+    run_one(PACK["gnt-control-001"], agent, Mode.RAW, Policy.ORIGIN, seed=1)
+    assert "Parameters for vault_get: service" in agent.transcript[3]["content"]
