@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from gauntlet.agents.llm_loop import LLMAgent, http_completion
+from gauntlet.core.events import EventKind
 from gauntlet.core.runner import Agent, RunResult, run_one
 from gauntlet.core.scenario import load_pack
 from gauntlet.env.world import Mode, Policy, World
@@ -70,12 +71,14 @@ def main(argv: list[str] | None = None) -> int:
             policies = args.policies if mode is Mode.BROKERED else [Policy.ORIGIN]
             for policy in policies:
                 for seed in range(args.repeats):
-                    r, _ = run_one(s, agent, mode, policy, seed)
+                    r, world = run_one(s, agent, mode, policy, seed)
                     results.append(r)
+                    calls = len(world.log.of_kind(EventKind.TOOL_CALL))
                     print(
-                        f"{s.id} {mode} {policy} seed={seed} "
+                        f"{s.id} {mode} {policy} seed={seed} tool_calls={calls} "
                         f"utility={r.utility} compromised={r.compromised}"
                     )
+                    save_trace(args.traces, r, world, agent)
     write_csv(results, args.out)
     print(f"wrote {len(results)} rows to {args.out}")
     return 0
